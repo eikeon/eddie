@@ -11,7 +11,7 @@ import (
 )
 
 func doTransition(name string) {
-	host := "10.0.1.16" //"marvin.local"
+	host := "marvin.local"
 	values := url.Values{"do_transition": {name}}
 	if r, err := http.PostForm("http://"+host+"/post", values); err != nil {
 		log.Println(err)
