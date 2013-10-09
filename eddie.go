@@ -84,8 +84,7 @@ func (e *Eddie) Run(in <-chan nog.Message, out chan<- nog.Message) {
 func main() {
 	log.Println("starting")
 
-	// "ws://marvin.local:80/message", "", "http://marvin.local/"
-	go nog.RemoteAdd("ws://gato.local:9999/message", "", "http://marvin.local:9999/", &Eddie{})
+	go nog.RemoteAdd("ws://marvin.local:80/message", "", "http://marvin.local/", &Eddie{})
 
 	notifyChannel := make(chan os.Signal, 1)
 	signal.Notify(notifyChannel, os.Interrupt)
