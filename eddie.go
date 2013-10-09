@@ -70,7 +70,7 @@ func (e *Eddie) Run(in <-chan nog.Message, out chan<- nog.Message) {
 				})
 				switch pressCount {
 				case 1:
-					out <- nog.NewMessage("Eddie", "set light All to off", "Eddie")
+					out <- nog.NewMessage("Eddie", "I am sleeping", "Eddie")
 				case 2:
 					out <- nog.NewMessage("Eddie", "set light All to nightlight", "Eddie")
 				default:
