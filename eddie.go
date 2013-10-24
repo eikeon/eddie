@@ -1,19 +1,18 @@
 package main
 
 import (
-	"encoding/json"
 	"io/ioutil"
 	"log"
 	"os"
 	"os/signal"
 	"path"
 	"runtime"
-	"strings"
 	"sync/atomic"
 	"time"
 
+	"code.google.com/p/go.net/websocket"
 	"github.com/eikeon/gpio"
-	"github.com/eikeon/marvin/nog"
+	"github.com/nogiushi/marvin/nog"
 )
 
 var Root = ""
@@ -23,18 +22,7 @@ func init() {
 	Root = path.Dir(filename)
 }
 
-type Eddie struct {
-	nog.InOut
-}
-
-func (e *Eddie) Run(in <-chan nog.Message, out chan<- nog.Message) {
-	options := nog.BitOptions{Name: "Eddie", Required: false}
-	if what, err := json.Marshal(&options); err == nil {
-		out <- nog.NewMessage("Eddie", string(what), "register")
-	} else {
-		log.Println("StateChanged err:", err)
-	}
-
+func Run(in <-chan nog.Message, out chan<- nog.Message) {
 	name := "eddie.html"
 	if j, err := os.OpenFile(path.Join(Root, name), os.O_RDONLY, 0666); err == nil {
 		if b, err := ioutil.ReadAll(j); err == nil {
@@ -51,40 +39,61 @@ func (e *Eddie) Run(in <-chan nog.Message, out chan<- nog.Message) {
 		panic(err)
 	}
 
-	var pressCount int64
-	for {
-		select {
-		case m := <-in:
-			if m.Why == "statechanged" {
-				dec := json.NewDecoder(strings.NewReader(m.What))
-				if err := dec.Decode(e); err != nil {
-					log.Println("eddie decode err:", err)
-				}
-			}
-		case value := <-ch:
-			if value {
-				out <- nog.NewMessage("Eddie", "hello", "eddie")
-				atomic.AddInt64(&pressCount, 1)
-				time.AfterFunc(time.Second, func() {
-					atomic.AddInt64(&pressCount, -1)
-				})
-				switch pressCount {
-				case 1:
-					out <- nog.NewMessage("Eddie", "I am sleeping", "Eddie")
-				case 2:
-					out <- nog.NewMessage("Eddie", "set light All to nightlight", "Eddie")
-				default:
-					out <- nog.NewMessage("Eddie", "set light All to chime", "Eddie")
+	go func() {
+		var pressCount int64
+		for {
+			select {
+			case value := <-ch:
+				if value {
+					atomic.AddInt64(&pressCount, 1)
+					time.AfterFunc(time.Second, func() {
+						atomic.AddInt64(&pressCount, -1)
+					})
+					switch pressCount {
+					case 1:
+						out <- nog.NewMessage("Eddie", "I am sleeping", "Eddie")
+					case 2:
+						out <- nog.NewMessage("Eddie", "set light All to nightlight", "Eddie")
+					default:
+						out <- nog.NewMessage("Eddie", "set light All to chime", "Eddie")
+					}
 				}
 			}
 		}
+	}()
+	for _ = range in {
 	}
 }
 
 func main() {
 	log.Println("starting")
 
-	go nog.RemoteAdd("ws://marvin.local:80/message", "", "http://marvin.local/", &Eddie{})
+	ws, err := websocket.Dial("ws://marvin.local:80/message", "", "http://marvin.local/")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fromWS := make(chan nog.Message)
+	toWS := make(chan nog.Message)
+	go func() {
+		var m nog.Message
+		if err := websocket.JSON.Receive(ws, &m); err == nil {
+			fromWS <- m
+		} else {
+			log.Println("Message Websocket receive err:", err)
+			close(fromWS)
+			return
+		}
+	}()
+	go func() {
+		for m := range toWS {
+			if err := websocket.JSON.Send(ws, &m); err != nil {
+				log.Println("Message Websocket send err:", err)
+				return
+			}
+		}
+	}()
+	Run(fromWS, toWS)
 
 	notifyChannel := make(chan os.Signal, 1)
 	signal.Notify(notifyChannel, os.Interrupt)
