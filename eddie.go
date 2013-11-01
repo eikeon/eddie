@@ -23,6 +23,7 @@ func init() {
 }
 
 func Run(in <-chan nog.Message, out chan<- nog.Message) {
+	out <- nog.Message{What: "started"}
 	name := "eddie.html"
 	if j, err := os.OpenFile(path.Join(Root, name), os.O_RDONLY, 0666); err == nil {
 		if b, err := ioutil.ReadAll(j); err == nil {
@@ -68,32 +69,36 @@ func Run(in <-chan nog.Message, out chan<- nog.Message) {
 func main() {
 	log.Println("starting")
 
-	ws, err := websocket.Dial("ws://marvin.local:80/message", "", "http://marvin.local/")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fromWS := make(chan nog.Message)
-	toWS := make(chan nog.Message)
-	go func() {
-		var m nog.Message
-		if err := websocket.JSON.Receive(ws, &m); err == nil {
-			fromWS <- m
-		} else {
-			log.Println("Message Websocket receive err:", err)
-			close(fromWS)
-			return
+	for {
+		ws, err := websocket.Dial("ws://marvin.local:80/message", "", "http://marvin.local/")
+		if err != nil {
+			log.Fatal(err)
 		}
-	}()
-	go func() {
-		for m := range toWS {
-			if err := websocket.JSON.Send(ws, &m); err != nil {
-				log.Println("Message Websocket send err:", err)
+
+		fromWS := make(chan nog.Message)
+		toWS := make(chan nog.Message)
+		go func() {
+			var m nog.Message
+			if err := websocket.JSON.Receive(ws, &m); err == nil {
+				fromWS <- m
+			} else {
+				log.Println("Message Websocket receive err:", err)
+				close(fromWS)
 				return
 			}
-		}
-	}()
-	Run(fromWS, toWS)
+		}()
+		go func() {
+			for m := range toWS {
+				if err := websocket.JSON.Send(ws, &m); err != nil {
+					log.Println("Message Websocket send err:", err)
+					close(toWS)
+					return
+				}
+			}
+		}()
+		Run(fromWS, toWS)
+		time.Sleep(1 * time.Second)
+	}
 
 	notifyChannel := make(chan os.Signal, 1)
 	signal.Notify(notifyChannel, os.Interrupt)
